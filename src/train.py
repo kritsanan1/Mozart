@@ -121,12 +121,12 @@ def load_classifiers():
             max_iter=20000,                  # More iterations for convergence
             alpha=1e-5,                      # L2 regularization to prevent overfitting
             solver='adam',                     # Adam optimizer for better performance
-            verbose=20,
-            tol=1e-10,                       # Lower tolerance for better accuracy
+            verbose=10,
+            tol=1e-6,                       # Lower tolerance for better accuracy
             random_state=random_seed,
             learning_rate_init=0.001,         # Higher initial learning rate
             learning_rate='adaptive',        # Adaptive learning rate
-            early_stopping=True,              # Prevent overfitting
+            early_stopping=False,              # Disable early stopping to avoid the issue
             validation_fraction=0.1,         # 10% for validation
             n_iter_no_change=50              # Stop if no improvement for 50 iterations
         )
@@ -135,14 +135,23 @@ def load_classifiers():
 
 
 def run_experiment(classifier='SVM', feature_set='hog', dir_names=[]):
+    from sklearn.preprocessing import LabelEncoder
+    
     print('Loading dataset. This will take time ...')
     features, labels = load_dataset(feature_set, dir_names)
     print('Finished loading dataset.')
 
+    # Convert to numpy arrays and ensure proper data types
+    features = np.array(features, dtype=np.float64)
+    
+    # Encode labels to ensure they're numeric
+    le = LabelEncoder()
+    labels_encoded = le.fit_transform(labels)
+    
     classifiers, random_seed = load_classifiers()
 
     train_features, test_features, train_labels, test_labels = train_test_split(
-        features, labels, test_size=0.2, random_state=random_seed)
+        features, labels_encoded, test_size=0.2, random_state=random_seed)
 
     model = classifiers[classifier]
     print('############## Training', classifier, "##############")
