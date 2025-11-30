@@ -35,22 +35,54 @@ def extract_hsv_histogram(img):
 def extract_hog_features(img):
     img = cv2.resize(img, target_img_size)
     win_size = (100, 100)
-    cell_size = (4, 4)
-    block_size_in_cells = (2, 2)
+    cell_size = (5, 5)  # Smaller cells for more detail
+    block_size_in_cells = (3, 3)  # Larger blocks for better context
 
     block_size = (block_size_in_cells[1] * cell_size[1],
                   block_size_in_cells[0] * cell_size[0])
     block_stride = (cell_size[1], cell_size[0])
-    nbins = 9  # Number of orientation bins
+    nbins = 12  # More orientation bins for better discrimination
     hog = cv2.HOGDescriptor(win_size, block_size,
                             block_stride, cell_size, nbins)
     h = hog.compute(img)
-    h = h.flatten()
     return h.flatten()
+
+
+def extract_hog_features_enhanced(img):
+    """Enhanced HOG feature extraction with optimized parameters for musical symbols"""
+    img = cv2.resize(img, target_img_size)
+    win_size = (100, 100)
+    cell_size = (5, 5)  # Smaller cells for capturing fine details
+    block_size_in_cells = (3, 3)  # Larger blocks for better spatial context
+
+    block_size = (block_size_in_cells[1] * cell_size[1],
+                  block_size_in_cells[0] * cell_size[0])
+    block_stride = (cell_size[1], cell_size[0])
+    nbins = 12  # More orientation bins for better feature discrimination
+    
+    # Create HOG descriptor with enhanced parameters
+    hog = cv2.HOGDescriptor(win_size, block_size, block_stride, cell_size, nbins)
+    h = hog.compute(img)
+    
+    # Handle case where HOG returns None
+    if h is None:
+        return np.zeros((win_size[0] // cell_size[0] * win_size[1] // cell_size[1] * nbins * block_size_in_cells[0] * block_size_in_cells[1],))
+    
+    h = h.flatten()
+    
+    # Normalize features to prevent dominance by lighting variations
+    if len(h) > 0:
+        norm = np.linalg.norm(h)
+        if norm > 0:
+            h = h / norm
+    
+    return h
 
 
 def extract_features(img, feature_set='raw'):
     if feature_set == 'hog':
+        return extract_hog_features_enhanced(img)
+    elif feature_set == 'hog_original':
         return extract_hog_features(img)
     elif feature_set == 'raw':
         return extract_raw_pixels(img)
@@ -83,12 +115,21 @@ def load_classifiers():
     classifiers = {
         'SVM': svm.LinearSVC(random_state=random_seed),
         'KNN': KNeighborsClassifier(n_neighbors=7),
-        'NN': MLPClassifier(activation='relu', hidden_layer_sizes=(200,),
-                            max_iter=10000, alpha=1e-4,
-                            solver='adam', verbose=20,
-                            tol=1e-8, random_state=1,
-                            learning_rate_init=.0001,
-                            learning_rate='adaptive')
+        'NN': MLPClassifier(
+            activation='relu', 
+            hidden_layer_sizes=(300, 150),  # Deeper network for better learning
+            max_iter=20000,                  # More iterations for convergence
+            alpha=1e-5,                      # L2 regularization to prevent overfitting
+            solver='adam',                     # Adam optimizer for better performance
+            verbose=20,
+            tol=1e-10,                       # Lower tolerance for better accuracy
+            random_state=random_seed,
+            learning_rate_init=0.001,         # Higher initial learning rate
+            learning_rate='adaptive',        # Adaptive learning rate
+            early_stopping=True,              # Prevent overfitting
+            validation_fraction=0.1,         # 10% for validation
+            n_iter_no_change=50              # Stop if no improvement for 50 iterations
+        )
     }
     return classifiers, random_seed
 
@@ -122,4 +163,12 @@ def train(model_name, feature_name, saved_model_name):
 
 
 if __name__ == "__main__":
-    train('NN', 'hog', 'nn_trained_model_hog')
+    # Train multiple models for comparison
+    print("Training enhanced neural network with HOG features...")
+    train('NN', 'hog', 'nn_trained_model_hog_enhanced')
+    
+    print("Training SVM with HOG features...")
+    train('SVM', 'hog', 'svm_trained_model_hog')
+    
+    print("Training KNN with HOG features...")
+    train('KNN', 'hog', 'knn_trained_model_hog')

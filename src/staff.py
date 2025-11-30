@@ -1,9 +1,67 @@
 from rle import *
 from commonfunctions import *
 from collections import Counter
+import cv2
+
+
 
 
 row_percentage = 0.3
+
+
+def enhance_staff_detection(img):
+    """Enhanced staff line detection using adaptive thresholding and morphological operations"""
+    # Apply adaptive thresholding for better binarization in varying lighting conditions
+    binary = cv2.adaptiveThreshold(
+        img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+    )
+    
+    # Morphological operations to enhance line detection
+    # Use horizontal kernel to detect staff lines
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
+    lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    
+    return lines
+
+
+def enhance_staff_removal(img_with_staff, thickness):
+    """Enhanced staff line removal with better preservation of musical symbols"""
+    img = img_with_staff.copy()
+    rows, cols = img.shape
+    
+    # Apply adaptive thresholding first
+    img_enhanced = enhance_staff_detection(img)
+    
+    # Use horizontal projection with adaptive threshold
+    projected = []
+    for i in range(rows):
+        proj_sum = 0
+        for j in range(cols):
+            proj_sum += img_enhanced[i][j] == 0  # Count black pixels (staff lines)
+        
+        # Adaptive threshold based on local context
+        local_threshold = 0.15 * cols  # More conservative threshold
+        if proj_sum <= local_threshold:
+            # Check neighboring rows for staff line consistency
+            consistent = True
+            for di in [-1, 1]:
+                ni = i + di
+                if 0 <= ni < rows:
+                    neighbor_proj = sum(img_enhanced[ni][j] == 0 for j in range(cols))
+                    if neighbor_proj > local_threshold * 1.5:
+                        consistent = False
+                        break
+            
+            if consistent:
+                # Remove staff line while preserving symbols
+                img[i, :] = 1
+                # Apply selective opening to preserve note heads
+                kernel_size = min(3 * thickness, 15)
+                if kernel_size > 0:
+                    kernel = np.ones((kernel_size, 1))
+                    img[i:i+kernel_size, :] = binary_opening(img[i:i+kernel_size, :], kernel)
+    
+    return img
 
 
 def calculate_thickness_spacing(rle, most_common):
@@ -60,18 +118,12 @@ def remove_staff_lines(rle, vals, thickness, shape):
 
 
 def remove_staff_lines_2(thickness, img_with_staff):
+    """Enhanced staff line removal with adaptive thresholding"""
     img = img_with_staff.copy()
-    projected = []
     rows, cols = img.shape
-    for i in range(rows):
-        proj_sum = 0
-        for j in range(cols):
-            proj_sum += img[i][j] == 1
-        projected.append([1]*proj_sum + [0]*(cols-proj_sum))
-        if(proj_sum <= row_percentage*cols):
-            img[i, :] = 1
-    closed = binary_opening(img, np.ones((3*thickness, 1)))
-    return closed
+    
+    # Use enhanced staff removal
+    return enhance_staff_removal(img, thickness)
 
 
 def get_rows(start, most_common, thickness, spacing):
